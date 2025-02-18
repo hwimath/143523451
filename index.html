@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>곱셈공식(전개)</title>
+  <!-- MathJax 로드 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    body {
+      background-color: #fff;
+      color: #000;
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+    }
+    .hidden {
+      display: none;
+    }
+    .question-container {
+      margin: 1em 0;
+      border: 1px solid #000;
+      padding: 1em;
+    }
+    .choices-container {
+      margin-top: 1em;
+    }
+    .choice {
+      margin: 0.5em 0;
+    }
+    .correct {
+      color: #000; /* 정답 표시 시에도 색 유지(흑백) */
+      font-weight: bold;
+    }
+    .wrong {
+      color: #000; /* 오답 표시 시에도 색 유지 */
+      text-decoration: underline;
+    }
+    .energy-bar {
+      width: 300px;
+      height: 20px;
+      border: 1px solid #000;
+      background-color: #fff;
+      margin: 1em 0;
+      position: relative;
+    }
+    .energy-fill {
+      background-color: #000;
+      height: 100%;
+      width: 100%;
+    }
+    .scoreboard, .lives {
+      margin: 0.5em 0;
+    }
+    #startScreen, #gameScreen, #endScreen {
+      border: 1px solid #000;
+      padding: 1em;
+      margin-bottom: 1em;
+    }
+    #response {
+      margin-top: 1em;
+      white-space: pre;
+      border: 1px solid #000;
+      padding: 0.5em;
+      min-height: 2em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>곱셈공식(전개)</h1>
+
+<!-- 시작 화면: 이름, 난이도 선택 -->
+<div id="startScreen">
+  <h3>이름을 입력하세요:</h3>
+  <input type="text" id="playerName" placeholder="이름 입력" />
+  
+  <h3>난이도 선택</h3>
+  <label><input type="radio" name="difficulty" value="최상"> 최상 (20초)</label><br>
+  <label><input type="radio" name="difficulty" value="상"> 상 (30초)</label><br>
+  <label><input type="radio" name="difficulty" value="중"> 중 (40초)</label><br>
+  <label><input type="radio" name="difficulty" value="하" checked> 하 (시간제한 없음)</label><br><br>
+  
+  <button onclick="startGame()">게임 시작</button>
+</div>
+
+<!-- 게임 화면 -->
+<div id="gameScreen" class="hidden">
+  <div class="scoreboard">점수: <span id="score">0</span></div>
+  <div class="lives">남은 기회: <span id="lives">3</span></div>
+  <div>전체 게임 시간: <span id="totalTime">0</span>초 (계속 증가)</div>
+  
+  <div class="energy-bar" id="energyBar" style="display:none;">
+    <div class="energy-fill" id="energyFill"></div>
+  </div>
+  
+  <div id="questionArea"></div>
+  
+  <button id="nextBtn" class="hidden" onclick="goNextQuestion()">다음 문제</button>
+</div>
+
+<!-- 게임 종료 화면 -->
+<div id="endScreen" class="hidden">
+  <h2>게임 종료!</h2>
+  <p>최종 점수: <span id="finalScore">0</span></p>
+  <button onclick="sendScore()">점수전송</button>
+  <div id="response"></div>
+</div>
+
+<script>
+// ------------------------------------
+// 서버 전송 함수
+// ------------------------------------
+function saveData(game, name, score, elapsedTime) {
+    const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+    const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+    };
+
+    fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(async (response) => {
+        const responseData = await response.json();
+        if (response.ok) {
+            document.getElementById('response').innerText =
+                `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+            document.getElementById('response').innerText =
+                `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+    })
+    .catch(error => {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText =
+            `네트워크 오류: ${error.message}`;
+    });
+}
+
+// ------------------------------------
+// 문제 데이터 (모두 해가 존재하도록 수정됨)
+// ------------------------------------
+// 순서는 여기서 크게 상관없고, 코드에서 shuffleArray로 매번 섞여서 출제됩니다.
+let problems = [
+  // 1) (x-1)(x-2) 전개
+  {
+    question: "식을 전개하세요: \\((x-1)(x-2)\\).",
+    choices: [
+      "\\(x^2 + 6x\\)",
+      "\\(x^2 - 3x + 2\\)",
+      "\\(x^2 + 3x - 2\\)",
+      "\\(x^2 - 6x + 2\\)"
+    ],
+    correctIndex: 1,
+    explanation: "전개하면 x^2 -2x - x + 2 = x^2 - 3x + 2"
+  },
+  // 2) (x+1)(x+2)
+  {
+    question: "식을 전개하세요: \\((x+1)(x+2)\\).",
+    choices: [
+      "\\(x^2 + 2x + 2\\)",
+      "\\(x^2 + 3x + 2\\)",
+      "\\(x^2 + 3x + 1\\)",
+      "\\(x^2 + 2x + 1\\)"
+    ],
+    correctIndex: 1,
+    explanation: "x^2 + 3x + 2"
+  },
+  // 3) (x+5)(x+2)
+  {
+    question: "식을 전개하세요: \\((x+5)(x+2)\\).",
+    choices: [
+      "\\(x^2 + 7x + 10\\)",
+      "\\(x^2 + 3x + 10\\)",
+      "\\(x^2 + 10x + 2\\)",
+      "\\(x^2 + 5x + 2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "x^2 + 7x + 10"
+  },
+  // 4) (2x-1)(3x + □ ) = 6x^2 + 5x -4  -> c=4
+  {
+    question: "다음 식이 성립하도록 \\((2x-1)(3x + \\square ) = 6x^2 + 5x -4\\) 에서 \\(\\square\\)를 고르시오.",
+    choices: ["1", "2", "4", "5"],
+    correctIndex: 2,
+    explanation: "전개: (2x-1)(3x+4)=6x^2+8x-3x-4=6x^2+5x-4"
+  },
+  // 5) (x+5)(x - □ ) = x^2 + x - 20  -> c=4
+  {
+    question: "다음 식이 성립하도록 \\((x+5)(x - \\square ) = x^2 + x -20\\) 에서 \\(\\square\\)를 고르시오.",
+    choices: ["3", "4", "2", "5"],
+    correctIndex: 1,
+    explanation: "전개: x^2 + (5-c)x -5c. c=4이면 x^2 + x -20이 된다."
+  },
+  // 6) (x+5)(x - □ ) = x^2 + 2x -15  -> c=3
+  {
+    question: "다음 식이 성립하도록 \\((x+5)(x - \\square ) = x^2 + 2x -15\\) 에서 \\(\\square\\)를 고르시오.",
+    choices: ["2", "3", "4", "5"],
+    correctIndex: 1,
+    explanation: "전개: x^2 + (5-c)x -5c. c=3이면 x^2 + 2x -15가 된다."
+  },
+  // 7) (3a-4)(7a + □ )= 21a^2 -25a -4 -> c=1
+  {
+    question: "다음 식이 성립하도록 \\((3a-4)(7a + \\square ) = 21a^2 -25a -4\\) 에서 \\(\\square\\)를 고르시오.",
+    choices: ["1", "2", "3", "4"],
+    correctIndex: 0,
+    explanation: "전개: (3a-4)(7a+1)=21a^2 +3a -28a -4=21a^2 -25a -4"
+  },
+  // 8) (3a-3y)(x+2y) -> 전개
+  {
+    question: "식을 전개하세요: \\((3a - 3y)(x + 2y)\\).",
+    choices: [
+      "\\(3ax + 6ay - 3xy - 6y^2\\)",
+      "\\(3ax - 6ay - 3xy + 6y^2\\)",
+      "\\(3ax + 6xy - 3ay - 6y^2\\)",
+      "\\(3ax + 6ay - 6xy - 3y^2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3a*x=3ax, 3a*2y=6ay, -3y*x=-3xy, -3y*2y=-6y^2"
+  },
+  // 9) (a-6b)(a - □ )= a^2 -10ab +24b^2 -> c=4b
+  {
+    question: "다음 식이 성립하도록 \\((a-6b)(a - \\square ) = a^2 - 10ab + 24b^2\\) 에서 \\(\\square\\)를 고르시오.",
+    choices: ["2b", "3b", "4b", "5b"],
+    correctIndex: 2,
+    explanation: "전개: (a-6b)(a-4b)= a^2 -4ab -6ab +24b^2= a^2 -10ab +24b^2"
+  },
+  // 10) (x-1)(x+7)
+  {
+    question: "식을 전개하세요: \\((x-1)(x+7)\\).",
+    choices: [
+      "\\(x^2 + 7x - 1\\)",
+      "\\(x^2 - 7x + 1\\)",
+      "\\(x^2 + 6x - 7\\)",
+      "\\(x^2 + 8x - 7\\)"
+    ],
+    correctIndex: 2,
+    explanation: "x^2 + 7x - x - 7 = x^2 + 6x - 7"
+  },
+  // 11) (y+3)(y+5)
+  {
+    question: "식을 전개하세요: \\((y+3)(y+5)\\).",
+    choices: [
+      "\\(y^2 + 8y + 15\\)",
+      "\\(y^2 + 2y + 15\\)",
+      "\\(y^2 + 3y + 5\\)",
+      "\\(y^2 + 8y - 15\\)"
+    ],
+    correctIndex: 0,
+    explanation: "y^2 + 5y + 3y + 15 = y^2 + 8y + 15"
+  },
+  // 12) (x+6)(x-4)
+  {
+    question: "식을 전개하세요: \\((x+6)(x-4)\\).",
+    choices: [
+      "\\(x^2 + 2x - 24\\)",
+      "\\(x^2 + 10x - 24\\)",
+      "\\(x^2 - 2x - 24\\)",
+      "\\(x^2 + 6x - 4\\)"
+    ],
+    correctIndex: 0,
+    explanation: "x^2 -4x +6x -24 = x^2 + 2x -24"
+  },
+  // 13) (b-6)(b-3)
+  {
+    question: "식을 전개하세요: \\((b-6)(b-3)\\).",
+    choices: [
+      "\\(b^2 - 9b + 18\\)",
+      "\\(b^2 + 9b - 18\\)",
+      "\\(b^2 - 3b - 6b + 18\\)",
+      "\\(b^2 - 3b - 18\\)"
+    ],
+    correctIndex: 0,
+    explanation: "b^2 -3b -6b +18 = b^2 -9b +18"
+  },
+  // 14) (a+1)(a-4)
+  {
+    question: "식을 전개하세요: \\((a+1)(a-4)\\).",
+    choices: [
+      "\\(a^2 - 4a + a - 4\\)",
+      "\\(a^2 - 3a - 4\\)",
+      "\\(a^2 + 3a - 4\\)",
+      "\\(a^2 - 4a - 1\\)"
+    ],
+    correctIndex: 1,
+    explanation: "a^2 -4a + a -4 = a^2 -3a -4"
+  },
+  // 15) (y-5)(y+4)
+  {
+    question: "식을 전개하세요: \\((y-5)(y+4)\\).",
+    choices: [
+      "\\(y^2 - y - 20\\)",
+      "\\(y^2 - y + 20\\)",
+      "\\(y^2 + 4y - 5y + 20\\)",
+      "\\(y^2 - 9y - 20\\)"
+    ],
+    correctIndex: 0,
+    explanation: "y^2 +4y -5y -20 = y^2 - y -20"
+  },
+  // 16) (x+3)(x+7)
+  {
+    question: "식을 전개하세요: \\((x+3)(x+7)\\).",
+    choices: [
+      "\\(x^2 + 10x + 21\\)",
+      "\\(x^2 + 3x + 7\\)",
+      "\\(x^2 + 7x + 3\\)",
+      "\\(x^2 + 10x - 21\\)"
+    ],
+    correctIndex: 0,
+    explanation: "x^2 +7x +3x +21 = x^2 +10x +21"
+  },
+  // 17) (x+2)(x+6)
+  {
+    question: "식을 전개하세요: \\((x+2)(x+6)\\).",
+    choices: [
+      "\\(x^2 + 6x + 2\\)",
+      "\\(x^2 + 8x + 12\\)",
+      "\\(x^2 + 8x - 12\\)",
+      "\\(x^2 + 2x + 6\\)"
+    ],
+    correctIndex: 1,
+    explanation: "x^2 +6x +2x +12 = x^2 +8x +12"
+  },
+  // 18) (x-5)(x-3)
+  {
+    question: "식을 전개하세요: \\((x-5)(x-3)\\).",
+    choices: [
+      "\\(x^2 - 8x + 15\\)",
+      "\\(x^2 + 8x - 15\\)",
+      "\\(x^2 - 2x - 15\\)",
+      "\\(x^2 - 15x + 8\\)"
+    ],
+    correctIndex: 0,
+    explanation: "x^2 -3x -5x +15 = x^2 -8x +15"
+  },
+  // 19) (x+2)(x+3)
+  {
+    question: "식을 전개하세요: \\((x+2)(x+3)\\).",
+    choices: [
+      "\\(x^2 + 5x + 6\\)",
+      "\\(x^2 + 3x + 2\\)",
+      "\\(x^2 + 6x + 5\\)",
+      "\\(x^2 + 2x + 3\\)"
+    ],
+    correctIndex: 0,
+    explanation: "x^2 +3x +2x +6 = x^2 +5x +6"
+  },
+  // 20) (2a+1)(3a+2)
+  {
+    question: "식을 전개하세요: \\((2a+1)(3a+2)\\).",
+    choices: [
+      "\\(6a^2 + 7a + 2\\)",
+      "\\(6a^2 + 5a + 2\\)",
+      "\\(6a^2 + 7a - 2\\)",
+      "\\(6a^2 + 1a + 2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "2a*3a=6a^2, 2a*2=4a, 1*3a=3a, 1*2=2 => 총합 6a^2 +7a +2"
+  },
+  // 21) (2x+5)(3x+4)
+  {
+    question: "식을 전개하세요: \\((2x+5)(3x+4)\\).",
+    choices: [
+      "\\(6x^2 + 23x + 20\\)",
+      "\\(6x^2 + 14x + 20\\)",
+      "\\(6x^2 + 8x + 20\\)",
+      "\\(6x^2 + 23x - 20\\)"
+    ],
+    correctIndex: 0,
+    explanation: "2x*3x=6x^2, 2x*4=8x, 5*3x=15x, 5*4=20 => 합 6x^2+23x+20"
+  },
+  // 22) (2x+5)(x+2)
+  {
+    question: "식을 전개하세요: \\((2x+5)(x+2)\\).",
+    choices: [
+      "\\(2x^2 + 9x + 10\\)",
+      "\\(2x^2 + 7x + 10\\)",
+      "\\(2x^2 + 5x + 10\\)",
+      "\\(2x^2 + 9x - 10\\)"
+    ],
+    correctIndex: 0,
+    explanation: "2x*x=2x^2, 2x*2=4x, 5*x=5x, 5*2=10 => 2x^2 +9x +10"
+  },
+  // 23) (3x-1)(4x+3)
+  {
+    question: "식을 전개하세요: \\((3x-1)(4x+3)\\).",
+    choices: [
+      "\\(12x^2 + 5x - 3\\)",
+      "\\(12x^2 + 7x - 3\\)",
+      "\\(12x^2 - 5x - 3\\)",
+      "\\(12x^2 + 5x + 3\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3x*4x=12x^2, 3x*3=9x, -1*4x=-4x, -1*3=-3 => 합 12x^2+5x-3"
+  },
+  // 24) (4x-1)(2x-7)
+  {
+    question: "식을 전개하세요: \\((4x-1)(2x-7)\\).",
+    choices: [
+      "\\(8x^2 - 30x + 7\\)",
+      "\\(8x^2 - 14x + 7\\)",
+      "\\(8x^2 + 30x - 7\\)",
+      "\\(8x^2 - 8x - 7\\)"
+    ],
+    correctIndex: 0,
+    explanation: "4x*2x=8x^2, 4x*(-7)=-28x, -1*2x=-2x, -1*(-7)=+7 => 합 -30x+7"
+  },
+  // 25) (3x-8)(5x-2) -> 수정하여 실제 전개
+  {
+    question: "식을 전개하세요: \\((3x - 8)(5x - 2)\\).",
+    choices: [
+      "\\(15x^2 - 46x + 16\\)",
+      "\\(15x^2 - 34x + 16\\)",
+      "\\(15x^2 + 46x - 16\\)",
+      "\\(15x^2 - 10x + 16\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3x*5x=15x^2, 3x*(-2)=-6x, -8*5x=-40x, -8*(-2)=16 => 합 -46x+16"
+  },
+  // 26) (2x-9)(3x-5)
+  {
+    question: "식을 전개하세요: \\((2x-9)(3x-5)\\).",
+    choices: [
+      "\\(6x^2 - 37x + 45\\)",
+      "\\(6x^2 + 37x - 45\\)",
+      "\\(6x^2 - 15x + 45\\)",
+      "\\(6x^2 - 45x + 37\\)"
+    ],
+    correctIndex: 0,
+    explanation: "2x*3x=6x^2, 2x*(-5)=-10x, -9*3x=-27x, -9*(-5)=45 => 합 -37x+45"
+  },
+  // 27) (3x+1)(2x+5)
+  {
+    question: "식을 전개하세요: \\((3x+1)(2x+5)\\).",
+    choices: [
+      "\\(6x^2 + 17x + 5\\)",
+      "\\(6x^2 + 15x + 5\\)",
+      "\\(6x^2 + 17x - 5\\)",
+      "\\(6x^2 + 16x + 5\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3x*2x=6x^2, 3x*5=15x, 1*2x=2x, 1*5=5 => 6x^2+17x+5"
+  },
+  // 28) (-x+y)(3x-2y)
+  {
+    question: "식을 전개하세요: \\((-x + y)(3x - 2y)\\).",
+    choices: [
+      "\\(-3x^2 + 5xy - 2y^2\\)",
+      "\\(-3x^2 - 5xy + 2y^2\\)",
+      "\\(3x^2 - 5xy - 2y^2\\)",
+      "\\(-3x^2 + xy - 2y^2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "-x*3x=-3x^2, -x*(-2y)=2xy, y*3x=3xy, y*(-2y)=-2y^2 => 합 2xy+3xy=5xy"
+  },
+  // 29) (3x+2y)(-2x+3y)
+  {
+    question: "식을 전개하세요: \\((3x + 2y)(-2x + 3y)\\).",
+    choices: [
+      "\\(-6x^2 + 5xy + 6y^2\\)",
+      "\\(-6x^2 - 5xy + 6y^2\\)",
+      "\\(6x^2 + 5xy + 6y^2\\)",
+      "\\(-6x^2 + 5x + 6y^2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3x*(-2x)=-6x^2, 3x*3y=9xy, 2y*(-2x)=-4xy, 2y*3y=6y^2 => 합 9xy-4xy=5xy"
+  },
+  // 30) (-3a+2b)(-2a-4b)
+  {
+    question: "식을 전개하세요: \\((-3a + 2b)(-2a - 4b)\\).",
+    choices: [
+      "\\(6a^2 + 8ab - 8b^2\\)",
+      "\\(6a^2 - 8ab + 8b^2\\)",
+      "\\(-6a^2 + 8ab - 8b^2\\)",
+      "\\(6a^2 + 8ab + 8b^2\\)"
+    ],
+    correctIndex: 0,
+    explanation: "-3a*(-2a)=6a^2, -3a*(-4b)=12ab, 2b*(-2a)=-4ab, 2b*(-4b)=-8b^2 => 합 12ab-4ab=8ab"
+  },
+  // 31) (3x+2)(4x+3)
+  {
+    question: "식을 전개하세요: \\((3x + 2)(4x + 3)\\).",
+    choices: [
+      "\\(12x^2 + 17x + 6\\)",
+      "\\(12x^2 + 9x + 6\\)",
+      "\\(12x^2 + 17x - 6\\)",
+      "\\(12x^2 + 5x + 6\\)"
+    ],
+    correctIndex: 0,
+    explanation: "3x*4x=12x^2, 3x*3=9x, 2*4x=8x, 2*3=6 => 합 17x+6"
+  },
+  // 32) (2x+5)(3x+6)
+  {
+    question: "식을 전개하세요: \\((2x + 5)(3x + 6)\\).",
+    choices: [
+      "\\(6x^2 + 27x + 30\\)",
+      "\\(6x^2 + 11x + 30\\)",
+      "\\(6x^2 + 30x + 27\\)",
+      "\\(6x^2 + 27x - 30\\)"
+    ],
+    correctIndex: 0,
+    explanation: "2x*3x=6x^2, 2x*6=12x, 5*3x=15x, 5*6=30 => 합 27x+30"
+  },
+  // 33) (-3x+1)(2x-3)
+  {
+    question: "식을 전개하세요: \\((-3x + 1)(2x - 3)\\).",
+    choices: [
+      "\\(-6x^2 + 11x - 3\\)",
+      "\\(-6x^2 - 11x + 3\\)",
+      "\\(6x^2 - 11x - 3\\)",
+      "\\(-6x^2 + 5x - 3\\)"
+    ],
+    correctIndex: 0,
+    explanation: "-3x*2x=-6x^2, -3x*(-3)=9x, 1*2x=2x, 1*(-3)=-3 => 합 11x-6x^2-3"
+  }
+];
+
+// ------------------------------------
+// 전역 상태
+// ------------------------------------
+let shuffledProblems = [];
+let currentIndex = 0;
+let score = 0;
+let lives = 3;
+let totalTime = 0;
+let totalTimerId = null;
+let energyTimerId = null;
+let energyLimit = 0;   // 난이도별 제한 시간
+let energyCurrent = 0;
+let difficultyScore = 10; // 기본(하) 점수
+let passedCount = 0;  // 한 바퀴 돌았는지 체크
+
+// ------------------------------------
+// 배열 섞기 함수
+// ------------------------------------
+function shuffleArray(arr) {
+  for(let i=arr.length-1; i>0; i--){
+    const j = Math.floor(Math.random()* (i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ------------------------------------
+// 게임 시작
+// ------------------------------------
+function startGame() {
+  const nameInput = document.getElementById("playerName").value.trim();
+  if(!nameInput){
+    alert("이름을 입력해주세요!");
+    return;
+  }
+
+  // 난이도 확인
+  const diffEls = document.getElementsByName("difficulty");
+  let chosenDiff = "하";
+  for(let d of diffEls){
+    if(d.checked) { chosenDiff = d.value; break; }
+  }
+
+  // 난이도별 시간/점수 설정
+  switch(chosenDiff){
+    case "최상":
+      energyLimit = 20;
+      difficultyScore = 20;
+      break;
+    case "상":
+      energyLimit = 30;
+      difficultyScore = 15;
+      break;
+    case "중":
+      energyLimit = 40;
+      difficultyScore = 13;
+      break;
+    case "하":
+    default:
+      energyLimit = 0; // 시간제한 없음
+      difficultyScore = 10;
+      break;
+  }
+
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("gameScreen").classList.remove("hidden");
+
+  // 문제 섞기
+  shuffledProblems = problems.slice();
+  shuffleArray(shuffledProblems);
+
+  currentIndex = 0;
+  score = 0;
+  lives = 3;
+  passedCount = 0;
+  document.getElementById("score").innerText = score;
+  document.getElementById("lives").innerText = lives;
+
+  // 전체 시간 타이머
+  totalTime = 0;
+  if(totalTimerId) clearInterval(totalTimerId);
+  totalTimerId = setInterval(()=>{
+    totalTime++;
+    document.getElementById("totalTime").innerText = totalTime;
+  }, 1000);
+
+  // 첫 문제
+  showProblem();
+}
+
+// ------------------------------------
+// 문제 표시
+// ------------------------------------
+function showProblem() {
+  // 에너지바 세팅
+  if(energyLimit > 0){
+    document.getElementById("energyBar").style.display = "block";
+    energyCurrent = energyLimit;
+    updateEnergyBar();
+    if(energyTimerId) clearInterval(energyTimerId);
+    energyTimerId = setInterval(()=>{
+      energyCurrent--;
+      if(energyCurrent <= 0){
+        // 시간 소진 -> 기회 1 감소
+        clearInterval(energyTimerId);
+        lives--;
+        document.getElementById("lives").innerText = lives;
+        if(lives <= 0){
+          endGame();
+          return;
+        }
+        // 에너지바 0되면 그냥 다음 문제로 넘어감(오답처리 없이)
+        goNextQuestion();
+      } else {
+        updateEnergyBar();
+      }
+    }, 1000);
+  } else {
+    // 하 난이도(시간제한 없음)
+    document.getElementById("energyBar").style.display = "none";
+  }
+
+  const qArea = document.getElementById("questionArea");
+  qArea.innerHTML = "";
+
+  let p = shuffledProblems[currentIndex];
+
+  let qDiv = document.createElement("div");
+  qDiv.className = "question-container";
+  qDiv.innerHTML = `<div><b>문제:</b> ${p.question}</div>`;
+
+  // 보기 컨테이너
+  let cDiv = document.createElement("div");
+  cDiv.className = "choices-container";
+
+  // 보기(4개)도 섞어주려면:
+  let indices = [0,1,2,3];
+  shuffleArray(indices);
+
+  indices.forEach(idx=>{
+    let btn = document.createElement("button");
+    btn.className = "choice";
+    btn.innerHTML = p.choices[idx];
+    btn.onclick = ()=>checkAnswer(idx);
+    cDiv.appendChild(btn);
+    cDiv.appendChild(document.createElement("br"));
+  });
+
+  qDiv.appendChild(cDiv);
+  qArea.appendChild(qDiv);
+
+  document.getElementById("nextBtn").classList.add("hidden");
+
+  // MathJax 렌더링
+  MathJax.typeset();
+}
+
+// ------------------------------------
+// 정답 체크
+// ------------------------------------
+function checkAnswer(selected) {
+  if(energyTimerId){
+    clearInterval(energyTimerId);
+    energyTimerId = null;
+  }
+
+  let p = shuffledProblems[currentIndex];
+  let correct = p.correctIndex;
+
+  const qArea = document.getElementById("questionArea");
+  let buttons = qArea.getElementsByTagName("button");
+  for(let b of buttons){
+    b.disabled = true;
+  }
+
+  if(selected === correct){
+    // 정답
+    score += difficultyScore;
+    document.getElementById("score").innerText = score;
+    buttons[selected].classList.add("correct");
+  } else {
+    // 오답
+    buttons[selected].classList.add("wrong");
+    lives--;
+    document.getElementById("lives").innerText = lives;
+    // 정답 강조
+    buttons[correct].classList.add("correct");
+  }
+
+  // 해설
+  let expDiv = document.createElement("div");
+  expDiv.style.marginTop = "1em";
+  expDiv.innerHTML = "<b>해설:</b> " + (p.explanation || "");
+  qArea.appendChild(expDiv);
+
+  if(lives <= 0){
+    endGame();
+    return;
+  }
+  document.getElementById("nextBtn").classList.remove("hidden");
+}
+
+// ------------------------------------
+// 다음 문제
+// ------------------------------------
+function goNextQuestion() {
+  currentIndex++;
+  passedCount++;
+  // 모든 문제를 한 번씩 다 풀었으면 이후엔 랜덤 반복
+  if(passedCount >= problems.length){
+    let randIdx = Math.floor(Math.random() * problems.length);
+    currentIndex = randIdx;
+  }
+  showProblem();
+}
+
+// ------------------------------------
+// 에너지바 갱신
+// ------------------------------------
+function updateEnergyBar() {
+  const fill = document.getElementById("energyFill");
+  if(energyLimit>0){
+    let ratio = energyCurrent / energyLimit;
+    if(ratio<0) ratio=0;
+    fill.style.width = (ratio*100)+"%";
+  } else {
+    fill.style.width = "100%";
+  }
+}
+
+// ------------------------------------
+// 게임 종료
+// ------------------------------------
+function endGame() {
+  if(energyTimerId) clearInterval(energyTimerId);
+  if(totalTimerId) clearInterval(totalTimerId);
+
+  document.getElementById("gameScreen").classList.add("hidden");
+  document.getElementById("endScreen").classList.remove("hidden");
+  document.getElementById("finalScore").innerText = score;
+}
+
+// ------------------------------------
+// 점수 전송
+// ------------------------------------
+function sendScore(){
+  const playerName = document.getElementById("playerName").value.trim();
+  saveData("곱셈공식(전개)", playerName, score, totalTime);
+}
+</script>
+
+</body>
+</html>
